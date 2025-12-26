@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TdA SFX test server</title>
+  <style>
+    :root {
+      --bg: #0f172a; --panel: #111827; --text: #e5e7eb; --muted: #9ca3af;
+      --accent: #22c55e; --border: #1f2937;
+    }
+    /* Evita sovrapposizioni dovute a padding/bordi */
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html,body {
+      margin:0; height:100%;
+      background:var(--bg); color:var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    }
+    .wrap { max-width: 720px; margin: 48px auto; padding: 24px; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    h2 { margin: 0 0 24px; font-weight: 500; color: var(--muted); }
+    h3 { margin: 24px 0 12px; font-weight: 600; color: var(--text); font-size: 18px; }
+    label { display:block; font-size: 14px; color: var(--muted); margin-bottom: 6px; }
+    input {
+      display:block;
+      width:100%; max-width:100%;
+      background:#0b1220; color:var(--text);
+      border:1px solid var(--border); padding:12px; border-radius:12px; font-size:16px;
+    }
+    input[readonly] { opacity: .9; }
+    input:focus { outline: 2px solid #374151; }
+
+    /* Grid generica */
+    .grid { display:grid; gap:16px; }
+
+    /* Grid a 2 colonne responsive per Angle/Sweep:
+       - 2 colonne quando c’è spazio
+       - impilata in verticale su schermi stretti */
+    .grid-two {
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+
+    .btn {
+      margin-top: 16px; background: var(--accent); color: #06210f;
+      border:none; padding: 12px 16px; border-radius: 12px; font-weight: 700; cursor:pointer;
+    }
+    .btn:disabled { opacity: .6; cursor: not-allowed; }
+    .status { margin-top: 16px; padding: 12px; border-radius: 12px; border:1px solid var(--border); font-size:12px; display:none; }
+    .ok { border-color: #064e3b; background: #052e22; color:#34d399; }
+    .err { border-color: #7f1d1d; background: #2a0a0a; color:#fca5a5; }
+    .footer { margin-top: 24px; font-size:12px; color:var(--muted); }
+    .row { margin-top: 6px; font-size:12px; color:var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>TdA SFX test server</h1>
+      <h2>Servo S90 test</h2>
+
+      <!-- cambiato class: grid -> grid grid-two -->
+      <div class="grid grid-two">
+        <div>
+          <label for="angle">Angle [degrees] (0–180)</label>
+          <input id="angle" type="number" min="0" max="180" step="1" value="90" />
+        </div>
+        <div>
+          <label for="sweep">Sweep Time [s] (0.5–60)</label>
+          <input id="sweep" type="number" min="0.5" max="60" step="0.5" value="1.0" />
+        </div>
+      </div>
+
+      <button id="setBtn" class="btn">Set</button>
+      <div id="status" class="status"></div>
+
+      <h3>HCSR04 Distance Monitor Test</h3>
+      <div class="grid" style="grid-template-columns: 1fr;">
+        <div>
+          <label for="distance">Distance [cm] (read-only, auto-refresh ogni 1000 ms)</label>
+          <input id="distance" type="text" readonly value="—" />
+          <div id="distInfo" class="row">In attesa di letture…</div>
+        </div>
+      </div>
+
+      <div class="footer">Plain HTTP per ora; in futuro dietro nginx/HTTPS.</div>
+    </div>
+  </div>
+
+  <script>
+    // --- Servo section ---
+    const angleEl = document.getElementById('angle');
+    const sweepEl = document.getElementById('sweep');
+    const btn = document.getElementById('setBtn');
+    const statusEl = document.getElementById('status');
+
+    function showStatus(msg, ok = true) {
+      statusEl.style.display = 'block';
+      statusEl.className = 'status ' + (ok ? 'ok' : 'err');
+      statusEl.textContent = msg;
+    }
+
+    btn.addEventListener('click', async () => {
+      const angle = Number.parseInt(angleEl.value, 10);
+      const sweep = Number.parseFloat(sweepEl.value);
+
+      if (Number.isNaN(angle) || angle < 0 || angle > 180) {
+        showStatus('Angle must be an integer between 0 and 180.', false);
+        return;
+      }
+      if (Number.isNaN(sweep) || sweep < 0.5 || sweep > 60) {
+        showStatus('Sweep Time must be between 0.5 and 60 seconds.', false);
+        return;
+      }
+
+      btn.disabled = true;
+      showStatus('Sending command...');
+
+      try {
+        const apiUrl = `${window.location.origin}/api/servo`;
+        const res = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ angle: Number(angle), sweep_time: Number(sweep) })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Request failed');
+        showStatus(`OK: angle=${data.angle}°, sweep_time=${data.sweep_time}s`, true);
+      } catch (e) {
+        showStatus('Error: ' + e.message, false);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // --- Distance subsection (auto-poll every 1000 ms) ---
+    const distanceEl = document.getElementById('distance');
+    const distInfoEl = document.getElementById('distInfo');
+    const apiDistanceUrl = `${window.location.origin}/api/distance`;
+
+    let pollHandle = null;
+
+    async function fetchDistance() {
+      try {
+        const res = await fetch(apiDistanceUrl, { method: 'GET' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const d = Number(data.distance);
+        const display = Number.isFinite(d) ? d.toFixed(1) : String(data.distance ?? '—');
+        distanceEl.value = display;
+        distInfoEl.textContent = `Ultimo aggiornamento: ${new Date().toLocaleTimeString()}`;
+      } catch (err) {
+        distanceEl.value = '—';
+        distInfoEl.textContent = `Errore lettura: ${err.message}`;
+      }
+    }
+
+    function startPolling() {
+      if (pollHandle) return;
+      fetchDistance(); // prima lettura immediata
+      pollHandle = setInterval(fetchDistance, 1000);
+    }
+    function stopPolling() {
+      if (pollHandle) {
+        clearInterval(pollHandle);
+        pollHandle = null;
+      }
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') startPolling();
+      else stopPolling();
+    });
+    startPolling();
+    window.addEventListener('beforeunload', stopPolling);
+  </script>
+</body>
+</html>
