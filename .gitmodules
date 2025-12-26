@@ -1,0 +1,6 @@
+[submodule "distance_monitor"]
+	path = distance_monitor
+	url = git@github.com:andreabotarelli/pi_py_HCSR04_distance_monitor.git
+[submodule "servo"]
+	path = servo
+	url = git@github.com:andreabotarelli/pi_py_servo_test.git

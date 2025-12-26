@@ -3,12 +3,20 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, conint, confloat
 from typing import Optional
-from servo import ServoS90
-from distance_monitor import DistanceMonitor
+from servo.servo import ServoS90
+from distance_monitor.distance_monitor import DistanceMonitor
 
-s = ServoS90(18)
-dm = DistanceMonitor(echo_pin=24, trigger_pin=23)
+try:
+    s = ServoS90(18)
+except Exception as e:
+    s = None
+    print(f"Failed to initialize servo: {e}")
 
+try:
+    dm = DistanceMonitor(echo_pin=24, trigger_pin=23)
+except Exception as e:
+    dm = None
+    print(f"Failed to initialize distance monitor: {e}")
 
 # --- FastAPI app ---
 app = FastAPI(title="TdA SFX test server")
@@ -42,6 +50,8 @@ class ServoCommand(BaseModel):
 
 @app.post("/api/servo")
 async def set_servo(cmd: ServoCommand):
+    if s is None:
+        return 500, {"error": "Servo not initialized"}
     global last_command
     last_command = cmd
     s.set_angle_sweep(cmd.angle, cmd.sweep_time)
@@ -49,6 +59,8 @@ async def set_servo(cmd: ServoCommand):
 
 @app.get("/api/distance")
 async def get_distance():
+    if dm is None:
+        return 500, {"error": "Distance monitor not initialized"}
     distance = dm.get_distance_cm()
     return {"distance": distance}
 
