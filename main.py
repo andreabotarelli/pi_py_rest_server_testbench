@@ -3,11 +3,11 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, conint, confloat
 from typing import Optional
-from servo.servo import ServoS90
+from servo.servo import Servo_Angular_S90
 from distance_monitor.distance_monitor import DistanceMonitor
 
 try:
-    s = ServoS90(18)
+    s = Servo_Angular_S90(18)
 except Exception as e:
     s = None
     print(f"Failed to initialize servo: {e}")
